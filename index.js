@@ -4,7 +4,8 @@
 import puppeteer from 'puppeteer';
 import './utils/read_csv.js'; // executed first
 import { ebus, EVENT } from './utils/eventbus.js';
-
+import { detectEnabledBrowserDevTool } from './utils/detect_bdt.js';
+import { LOG_TYPE, log, optimizePage } from './utils/utils.js';
 
 
 //----------------
@@ -24,24 +25,40 @@ launchtBrowser();
 //----------------
 async function launchtBrowser() {
   browser = await puppeteer.launch({
-    headless: 'new',
+    headless: false, // mandatory to use browser extensions
+    executablePath: process.env.CHROME_PATH,
+    pipe: true,
+    enableExtensions: [process.env.REACT_DEV_TOOL_PATH],
     args: [
       '--no-sandbox',
+      `--load-extension='${process.env.REACT_DEV_TOOL_PATH}'`,
+      '--disable-gpu',
+      '--start-minimized',
+      '--disable-software-rasterizer',
+      '--disable-accelerated-2d-canvas',
+      '--disable-dev-shm-usage',
+      '--disable-dev-tools',
+      '--disable-infobars',
     ],
-    // dumpio: true, // debug log
   });
-  console.log('[START] Browser launched successfully.\n');
+
+  await log({ type: LOG_TYPE.INFO, msg: 'Browser launched successfully' });
   ebus.emit(EVENT.START); // start reading CSV when browser is ready
 }
+
+
 
 function onEndJob() {
   jobEnded = true;
 }
 
+
+
 async function closeBrowser() {
   await browser.close();
-  console.log('\n[END] Browser closed successfully.');
+  await log({ type: LOG_TYPE.INFO, msg: 'Browser closed successfully' });
 }
+
 
 
 async function onBatchReady(ev) {
@@ -50,28 +67,28 @@ async function onBatchReady(ev) {
 
     // Check target
     if (!target) {
-      console.error('[BATCH PROCESSING ERROR] empty object');
+      await log({ type: LOG_TYPE.ERROR, msg: "Batch processing error. Empty object" });
     }
 
     try {
+      // Browse to target domain
       const url = `https://${target.domain}`;
-      console.log(`[NAVIGATE] ${url}`);
-
+      await log({ type: LOG_TYPE.INFO, msg: `Navigate to ${url}` });
       const page = await browser.newPage();
-
-      await page.goto('about:blank');
+      await optimizePage(page);
       await page.goto(url, { waitUntil: 'networkidle0', timeout: 15000 });
 
-      console.log('loaded', await page.title())
+      // Evaluate target domain
+      const results = await page.evaluate(detectEnabledBrowserDevTool);
 
-      // const rdt = await page.evaluate(() => {
-      //   // undefined: puppetteer does not have react dev tool installed
-      //   return window.__REACT_DEVTOOLS_GLOBAL_HOOK__?.rendererInterfaces;
-      // });
-      // console.log(`[React Dev Tool]: ${!!rdt}`);
+      // Save results
+      // [TO DO]
+
+      // Close current page
+      await page.close();
 
     } catch (err) {
-      console.error(`[ERROR] ${target.domain}: ${err.message}`);
+      await log({ type: LOG_TYPE.ERROR, msg: `${target.domain}: ${err.message}` });
       continue;
     }
   }

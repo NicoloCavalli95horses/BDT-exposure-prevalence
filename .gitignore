@@ -1,2 +1,4 @@
 node_modules
-tranco
+assets/*
+.env
+output
