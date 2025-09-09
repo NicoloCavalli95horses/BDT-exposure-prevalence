@@ -42,10 +42,10 @@ export async function optimizePage(page) {
 }
 
 
-export async function log( {type, msg} ) {
+export async function log( {type, msg, newline} ) {
   const timestamp = new Date().toISOString();
     try {
-    await fs.appendFile(LOG_PATH, `[${timestamp}] [${type}]: ${msg}\n`);
+    await fs.appendFile(LOG_PATH, `${newline ? '\n' : ''}[${timestamp}] [${type}]: ${msg}\n`);
   } catch (err) {
     console.error(`${LOG_TYPE.ERROR}. Unable to write log`, err);
   }

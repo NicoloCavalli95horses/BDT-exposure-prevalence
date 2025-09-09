@@ -2,10 +2,15 @@
 // Import
 //----------------
 import puppeteer from 'puppeteer';
-import './utils/read_csv.js'; // executed first
+import './utils/service.js'; // executed first
+import './test/results.test.js'; // executed in test mode
 import { ebus, EVENT } from './utils/eventbus.js';
-import { detectEnabledBrowserDevTool } from './utils/detect_bdt.js';
+import { evaluatePage } from './utils/evaluate.js';
 import { LOG_TYPE, log, optimizePage } from './utils/utils.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 
 
 //----------------
@@ -13,25 +18,42 @@ import { LOG_TYPE, log, optimizePage } from './utils/utils.js';
 //----------------
 let browser;
 let jobEnded = false;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const LOG_PATH = path.join(__dirname, './output/log.txt');
+
+const batch = {
+  number: 0,
+  content: [],
+  results: [],
+};
 
 ebus.on(EVENT.BATCH_READY, onBatchReady);
 ebus.on(EVENT.DONE, onEndJob);
+ebus.on(EVENT.BATCH_SAVED, onNextJob);
 
 
 launchtBrowser();
+
+
 
 //----------------
 // Function
 //----------------
 async function launchtBrowser() {
+  await fs.writeFile(LOG_PATH, ''); // clean log
+
   browser = await puppeteer.launch({
     headless: false, // mandatory to use browser extensions
     executablePath: process.env.CHROME_PATH,
     pipe: true,
-    enableExtensions: [process.env.REACT_DEV_TOOL_PATH],
+    enableExtensions: [
+      process.env.REACT_DEV_TOOL_PATH,
+      process.env.VUE_DEV_TOOL_PATH,
+      process.env.ANGULAR_DEV_TOOL_PATH,
+      process.env.SVELTE_DEV_TOOL_PATH,
+    ],
     args: [
       '--no-sandbox',
-      `--load-extension='${process.env.REACT_DEV_TOOL_PATH}'`,
       '--disable-gpu',
       '--start-minimized',
       '--disable-software-rasterizer',
@@ -56,18 +78,29 @@ function onEndJob() {
 
 async function closeBrowser() {
   await browser.close();
-  await log({ type: LOG_TYPE.INFO, msg: 'Browser closed successfully' });
+  await log({ type: LOG_TYPE.INFO, msg: 'Browser closed successfully', newline: true });
+}
+
+
+
+async function onNextJob() {
+  await log({ type: LOG_TYPE.INFO, msg: `Batch completed ${batch.number}, requesting batch ${batch.number + 1}` });
+  ebus.emit(EVENT.BATCH_NEXT);
 }
 
 
 
 async function onBatchReady(ev) {
-  for (let i = 0; i < ev.length; i++) {
-    const target = ev[i];
+  batch.number = ev.number;
+  batch.content = ev.content;
+  await log({ type: LOG_TYPE.INFO, msg: `Processing batch ${batch.number}`, newline: true });
+
+  for (let i = 0; i < batch.content.length; i++) {
+    const target = batch.content[i];
 
     // Check target
     if (!target) {
-      await log({ type: LOG_TYPE.ERROR, msg: "Batch processing error. Empty object" });
+      await log({ type: LOG_TYPE.ERROR, msg: `Batch ${batch.number} processing error: empty object` });
     }
 
     try {
@@ -79,10 +112,9 @@ async function onBatchReady(ev) {
       await page.goto(url, { waitUntil: 'networkidle0', timeout: 15000 });
 
       // Evaluate target domain
-      const results = await page.evaluate(detectEnabledBrowserDevTool);
-
-      // Save results
-      // [TO DO]
+      const result = await page.evaluate(evaluatePage);
+      await log({ type: LOG_TYPE.RESULT, msg: `[JS FRAMEWORK]: ${result.detected_framework}, [DEV TOOLS ENABLED]: ${result.dev_tool_enabled}` });
+      batch.results.push(result);
 
       // Close current page
       await page.close();
@@ -91,6 +123,15 @@ async function onBatchReady(ev) {
       await log({ type: LOG_TYPE.ERROR, msg: `${target.domain}: ${err.message}` });
       continue;
     }
+  }
+
+  await log({ type: LOG_TYPE.INFO, msg: `Batch ${batch.number} processed successfully` });
+
+  if (batch.results.length) {
+    // Save batch results
+    ebus.emit(EVENT.SAVE_DB, batch);
+    batch.content = [];
+    batch.results = [];
   }
 
   if (jobEnded) {

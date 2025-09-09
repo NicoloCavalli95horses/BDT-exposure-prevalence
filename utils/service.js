@@ -12,8 +12,9 @@ import { fileURLToPath } from 'url';
 //-------------------
 // Consts
 //-------------------
-const FILE_PATH = '../assets/test.csv';
+const FILE_PATH = `../assets/${process.env.TEST_MODE ? 'test' : 'top-1m'}.csv`;
 const BATCH_SIZE = 100;
+let number = 0;
 let results = [];
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const csvPath = path.join(__dirname, FILE_PATH);
@@ -30,14 +31,15 @@ function onStart() {
 
     if (results.length === BATCH_SIZE) {
       stream.pause();
-      ebus.emit(EVENT.BATCH_READY, [...results]);
+      number++;
+      ebus.emit(EVENT.BATCH_READY, {number, content: [...results]} );
       results = [];
     }
   });
 
 
 
-  ebus.on(EVENT.BATCH_PROCESSED, () => {
+  ebus.on(EVENT.BATCH_NEXT, () => {
     stream.resume();
   });
 
@@ -45,7 +47,9 @@ function onStart() {
 
   stream.on('end', () => {
     if (results.length > 0) {
-      ebus.emit(EVENT.BATCH_READY, [...results]);
+      number++;
+      ebus.emit(EVENT.BATCH_READY, {number, content: [...results]});
+      results = [];
     }
     // End process
     ebus.emit(EVENT.DONE);
