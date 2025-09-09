@@ -52,6 +52,6 @@ function onStart() {
       results = [];
     }
     // End process
-    ebus.emit(EVENT.DONE);
+    ebus.emit(EVENT.READ_DONE);
   });
 }

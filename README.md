@@ -1,5 +1,5 @@
-### npm run test
-Use test file, run debug scripts to test for false positive/false negatives
+### npm run subset
+Use subset of preselected domains
 
-### npm run dev
+### npm run tranco
 Use Tranco's Top 1 Million CSV file
