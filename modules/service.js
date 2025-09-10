@@ -6,6 +6,7 @@ import path from 'path';
 import csv from 'csv-parser';
 import { ebus, EVENT } from './eventbus.js';
 import { fileURLToPath } from 'url';
+import { GLOBAL_CONFIG } from './config.js';
 
 
 
@@ -13,7 +14,6 @@ import { fileURLToPath } from 'url';
 // Consts
 //-------------------
 const FILE_PATH = `../assets/${process.env.TEST_MODE ? 'test' : 'top-1m'}.csv`;
-const BATCH_SIZE = 100;
 let number = 0;
 let results = [];
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,7 +29,7 @@ function onStart() {
   stream.on('data', (data) => {
     results.push(data);
 
-    if (results.length === BATCH_SIZE) {
+    if (results.length === GLOBAL_CONFIG.BATCH_SIZE) {
       stream.pause();
       number++;
       ebus.emit(EVENT.BATCH_READY, {number, content: [...results]} );

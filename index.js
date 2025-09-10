@@ -8,6 +8,7 @@ import { LOG_TYPE, log, optimizePage } from './modules/utils.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { GLOBAL_CONFIG } from './modules/config.js';
 import './modules/service.js';
 import './modules/db.js';
 
@@ -19,8 +20,6 @@ let browser;
 let jobEnded = false;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG_PATH = path.join(__dirname, './output/log.txt');
-const MAX_TAB = 5;
-const queue = [];
 
 const batch = {
   number: 0,
@@ -59,8 +58,6 @@ async function launchBrowser() {
       '--start-minimized',
       '--disable-software-rasterizer',
       '--disable-accelerated-2d-canvas',
-      '--disable-dev-shm-usage',
-      '--disable-dev-tools',
       '--disable-infobars',
     ],
   });
@@ -93,6 +90,8 @@ async function onNextJob() {
 
 
 async function onBatchReady(ev) {
+  let active_tab = [];
+
   // Update batch
   batch.number = ev.number;
   batch.content = ev.content;
@@ -101,10 +100,25 @@ async function onBatchReady(ev) {
   // Process batch entries
   for (let i = 0; i < batch.content.length; i++) {
     const target = batch.content[i];
-    const res = await processEntry(target);
-    if (!res) { continue; }
+
+    const tab_count = await browser.pages()?.length || 0;
+
+    if (tab_count < GLOBAL_CONFIG.MAX_TABS) {
+      const entry_promise = processEntry(target.domain);
+      active_tab.push(entry_promise);
+
+      entry_promise.then(() => {
+        // Remove from the active tab
+        active_tab = active_tab.filter(p => p !== entry_promise);
+      })
+    } else {
+      // Wait for a tab to free
+      await Promise.race(active_tab);
+    }
   }
 
+  // Wait for all the promises to complete
+  await Promise.all(active_tab);
   await log({ type: LOG_TYPE.INFO, msg: `Batch ${batch.number} processed successfully` });
 
   // Save batch results
@@ -121,36 +135,33 @@ async function onBatchReady(ev) {
 }
 
 
-async function processEntry(target) {
+async function processEntry(domain) {
+  let page = undefined;
   try {
     // Check target
-    if (!target) {
+    if (!domain) {
       await log({ type: LOG_TYPE.ERROR, msg: `Batch ${batch.number} processing error: empty object` });
-      return false;
     }
   
-    // Browse to target domain
-    const url = `https://${target.domain}`;
+    // Browse to domain
+    const url = `https://${domain}`;
     await log({ type: LOG_TYPE.INFO, msg: `Navigate to ${url}` });
-    const page = await browser.newPage();
+    page = await browser.newPage();
     await optimizePage(page);
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 15000 });
 
-    // Evaluate target domain
+    // Evaluate domain
     const result = await page.evaluate(evaluatePage);
-    await log({ type: LOG_TYPE.RESULT, msg: `[JS FRAMEWORK]: ${result.detected_framework}, [DEV TOOLS ENABLED]: ${result.dev_tool_enabled}` });
+    await log({ type: LOG_TYPE.RESULT, msg: `[DOMAIN]: ${url}, [JS FRAMEWORK]: ${result.detected_framework}, [DEV TOOLS ENABLED]: ${result.dev_tool_enabled}` });
     
     if (result) {
       batch.results.push(result);
     }
 
-    // Close current page
-    await page.close();
-
-    return true;
-
   } catch (err) {
-    await log({ type: LOG_TYPE.ERROR, msg: `${target.domain}: ${err.message}` });
-    return false;
+    await log({ type: LOG_TYPE.ERROR, msg: `${domain}: ${err.message}` });
+  } finally {
+    // Resolve promise and close current tab
+    await page.close();
   }
 }

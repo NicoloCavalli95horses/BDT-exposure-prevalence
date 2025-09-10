@@ -47,8 +47,12 @@ async function test() {
 function onSaveEvent() {
   if (process.env.TEST_MODE) {
     // [TODO]: save on local JSON
+    ebus.emit(EVENT.BATCH_SAVED);
+    // await log({ type: LOG_TYPE.INFO, msg: `Batch results saved to db successfully` });
   } else {
     // [TODO]: save on db
+    ebus.emit(EVENT.BATCH_SAVED);
+    // await log({ type: LOG_TYPE.INFO, msg: `Batch results saved to db successfully` });
   }
 }
 
