@@ -15,12 +15,40 @@ ebus.on(EVENT.SAVE_DB, onSaveEvent);
 ebus.on(EVENT.MAIN_DONE, onMainDone);
 
 
+const batchSchema = new mongoose.Schema({
+  batch_number: {
+    type: Number,
+    required: true
+  },
+  results: {
+    type: [
+      {
+        domain: {
+          type: String,
+          required: true
+        },
+        detected_framework: {
+          type: String,
+          required: true
+        },
+        dev_tool_enabled: {
+          type: Boolean,
+          required: true
+        }
+      }
+    ],
+    required: true
+  }
+});
+
+
+
 //-------------------
 // Functions
 //-------------------
 async function connectDB() {
   try {
-    const connectionInstance = await mongoose.connect(`${process.env.DATABASE_URL}`);
+    await mongoose.connect(`${process.env.DATABASE_URL}`);
     await log({ type: LOG_TYPE.INFO, msg: 'DB connected successfully', newline: true });
   } catch (error) {
     await log({ type: LOG_TYPE.FATAL, msg: `DB connection error: ${error}`, newline: true });
@@ -30,30 +58,23 @@ async function connectDB() {
 
 
 
-async function test() {
-  // data schema must be defined
-  const testSchema = new mongoose.Schema({
-    test: { type: Boolean, required: true }
-  });
+async function saveToDB( {data, collectionName, schema} ) {
+  const model = mongoose.model(collectionName, schema);
 
-  // define which schema you want to use
-  const TestModel = mongoose.model('Test', testSchema);
-  // add new data
-  await TestModel.create({ test: true });
+  try {
+    await model.create(data);
+    await log({ type: LOG_TYPE.INFO, msg: `Batch results saved to db successfully` });
+  } catch (error) {
+    await log({ type: LOG_TYPE.ERROR, msg: `DB saving error: ${error}` });
+  }
 }
 
 
 
-function onSaveEvent() {
-  if (process.env.TEST_MODE) {
-    // [TODO]: save on local JSON
-    ebus.emit(EVENT.BATCH_SAVED);
-    // await log({ type: LOG_TYPE.INFO, msg: `Batch results saved to db successfully` });
-  } else {
-    // [TODO]: save on db
-    ebus.emit(EVENT.BATCH_SAVED);
-    // await log({ type: LOG_TYPE.INFO, msg: `Batch results saved to db successfully` });
-  }
+async function onSaveEvent(data) {
+  const collectionName = process.env.TEST_MODE ? 'tests' : 'domains';
+  await saveToDB({data, collectionName, schema: batchSchema});
+  ebus.emit(EVENT.BATCH_SAVED);
 }
 
 

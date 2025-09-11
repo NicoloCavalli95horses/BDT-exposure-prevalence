@@ -14,7 +14,7 @@ import { GLOBAL_CONFIG } from './config.js';
 // Consts
 //-------------------
 const FILE_PATH = `../assets/${process.env.TEST_MODE ? 'test' : 'top-1m'}.csv`;
-let number = 0;
+let batch_number = 0;
 let results = [];
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const csvPath = path.join(__dirname, FILE_PATH);
@@ -31,8 +31,8 @@ function onStart() {
 
     if (results.length === GLOBAL_CONFIG.BATCH_SIZE) {
       stream.pause();
-      number++;
-      ebus.emit(EVENT.BATCH_READY, {number, content: [...results]} );
+      batch_number++;
+      ebus.emit(EVENT.BATCH_READY, {batch_number, content: [...results]} );
       results = [];
     }
   });
@@ -47,8 +47,8 @@ function onStart() {
 
   stream.on('end', () => {
     if (results.length > 0) {
-      number++;
-      ebus.emit(EVENT.BATCH_READY, {number, content: [...results]});
+      batch_number++;
+      ebus.emit(EVENT.BATCH_READY, {batch_number, content: [...results]});
       results = [];
     }
     // End process

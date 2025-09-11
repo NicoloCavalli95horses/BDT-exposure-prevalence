@@ -49,7 +49,7 @@ export async function evaluatePage() {
   };
 
   const isEmber = () => {
-    return false;
+    return !!window.emberAutoImportDynamic || !!window.EmberInspector;
   }
 
   const detected_framework = isReact() ? REACT
@@ -81,8 +81,8 @@ export async function evaluatePage() {
       break;
 
     case EMBER:
-      // [TO-DO]
-      dev_tool_enabled = false;
+      // Ember inspector is enabled by default and has access to the render tree
+      dev_tool_enabled = !!window.EmberInspector?.viewDebug?.renderTree?.tree?.length;
       break;
 
     default:

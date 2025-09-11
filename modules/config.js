@@ -8,6 +8,7 @@
 // Consts
 //-------------------
 export const GLOBAL_CONFIG = Object.freeze({
-  MAX_TABS: 3,
-  BATCH_SIZE: 3,
+  MAX_TABS: 5,
+  BATCH_SIZE: 25,
+  TIMEOUT: 15000,
 });

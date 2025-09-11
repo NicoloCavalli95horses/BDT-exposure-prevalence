@@ -17,6 +17,7 @@ export const LOG_TYPE = Object.freeze({
   WARN: 'warn',     // potential error
   ERROR: 'error',   // handled error that requires attention
   FATAL: 'fatal',   // fatal error that blocks execution
+  CONFIG: 'config'  // config info
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

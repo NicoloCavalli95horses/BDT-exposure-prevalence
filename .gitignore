@@ -2,3 +2,4 @@ node_modules
 assets/top-1m.csv
 .env
 output
+todo
