@@ -21,7 +21,7 @@ export const LOG_TYPE = Object.freeze({
 });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LOG_PATH = path.join(__dirname, '../output/log.txt');
+const log_path = path.join(__dirname, '../output/log.txt');
 
 
 
@@ -46,7 +46,7 @@ export async function optimizePage(page) {
 export async function log( {type, msg, newline} ) {
   const timestamp = new Date().toISOString();
     try {
-    await fs.appendFile(LOG_PATH, `${newline ? '\n' : ''}[${timestamp}] [${type}]: ${msg}\n`);
+    await fs.appendFile(log_path, `${newline ? '\n' : ''}[${timestamp}] [${type}]: ${msg}\n`);
   } catch (err) {
     console.error(`${LOG_TYPE.ERROR}. Unable to write log`, err);
   }
