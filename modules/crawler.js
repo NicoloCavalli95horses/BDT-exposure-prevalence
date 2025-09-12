@@ -6,9 +6,8 @@ import path from 'path';
 import puppeteer from 'puppeteer';
 
 import { ebus, EVENT } from './eventbus.js';
-import { evaluatePage } from './evaluate.js';
 import { GLOBAL_CONFIG } from './config.js';
-import { LOG_TYPE, log, optimizePage } from './utils.js';
+import { LOG_TYPE, log, getExtensionFullPath } from './utils.js';
 import { fileURLToPath } from 'url';
 
 
@@ -17,14 +16,10 @@ import { fileURLToPath } from 'url';
 // Consts
 //----------------
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LOG_PATH = path.join(__dirname, '../output/log.txt');
-const local_extensions = [
-  process.env.REACT_DEV_TOOL_PATH,
-  process.env.VUE_DEV_TOOL_PATH,
-  process.env.ANGULAR_DEV_TOOL_PATH,
-  process.env.SVELTE_DEV_TOOL_PATH,
-]
+const log_path = path.join(__dirname, '../output/log.txt');
+const evaluate_path = path.join(__dirname, './evaluate.js');
 
+const local_extensions = await getExtensionFullPath(process.env.CHROME_EXTENSIONS_PATH);
 
 //----------------
 // Crawler Class
@@ -42,7 +37,7 @@ export class Crawler {
 
 
   launchBrowser = async () => {
-    await fs.writeFile(LOG_PATH, ''); // clean log
+    await fs.writeFile(log_path, ''); // clean log
 
     this.browser = await puppeteer.launch({
       headless: false, // mandatory to use browser extensions
@@ -64,8 +59,24 @@ export class Crawler {
     ebus.emit(EVENT.START);
   }
 
+
   onEndJob = () => {
     this.job_ended = true;
+  }
+
+
+  classToString = async (path) => {
+    return await fs.readFile(path, 'utf-8');
+  }
+
+
+  injectClassIntoPageCtx = async (page) => {
+    try {
+      const str = await this.classToString(evaluate_path);
+      await page.evaluateOnNewDocument(`${str} window.__privEvaluator = Evaluator;`);
+    } catch (error) {
+      await log({ type: LOG_TYPE.ERROR, msg: `Failed to inject "__privEvaluator" class: ${error}` });
+    }
   }
 
 
@@ -74,6 +85,7 @@ export class Crawler {
     await log({ type: LOG_TYPE.INFO, msg: 'Browser closed successfully', newline: true });
     ebus.emit(EVENT.MAIN_DONE);
   }
+
 
   onNextJob = async () => {
     await log({ type: LOG_TYPE.INFO, msg: `Batch completed ${this.batch.batch_number}, requesting batch ${this.batch.batch_number + 1}` });
@@ -126,6 +138,17 @@ export class Crawler {
   }
 
 
+  optimizePage = async (page) => {
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      // Prevent image, stylesheet, font and media from being loaded by the browser to save time
+      const resourceType = req.resourceType();
+      const blocked = ['image', 'stylesheet', 'font', 'media'];
+      blocked.includes(resourceType) ? req.abort() : req.continue();
+    });
+  }
+
+
   processEntry = async (domain) => {
     let page = undefined;
 
@@ -136,25 +159,67 @@ export class Crawler {
 
     try {
       // Browse to domain
-      const url = `https://${domain}`;
-      await log({ type: LOG_TYPE.INFO, msg: `Navigate to ${url}` });
       page = await this.browser.newPage();
-      await optimizePage(page);
-      await page.goto(url, { waitUntil: 'networkidle0', timeout: GLOBAL_CONFIG.TIMEOUT });
-
+      await this.optimizePage(page);
+      await this.injectClassIntoPageCtx(page);
+      await this.handleNavigation(domain, page);
       // Evaluate domain
-      const result = await page.evaluate(evaluatePage);
-      await log({ type: LOG_TYPE.RESULT, msg: `[DOMAIN]: ${url}, [JS FRAMEWORK]: ${result.detected_framework}, [DEV TOOLS ENABLED]: ${result.dev_tool_enabled}` });
+      const result = await this.evaluateDomain(domain, page);
+      // Update batch result
       if (result) {
         this.batch.results.push({ domain, ...result });
       }
-
     } catch (err) {
       await log({ type: LOG_TYPE.ERROR, msg: `${domain}: ${err.message}` });
     } finally {
       // Resolve promise and close current tab
       await page.close();
     }
+  }
+
+
+  handleNavigation = async (domain, page) => {
+    const MAX_ATTEMPTS = GLOBAL_CONFIG.MAX_NAVIGATION_ATTEMPTS;
+    const TIMEOUT = GLOBAL_CONFIG.TIMEOUT;
+    const protocols = ['https', 'http'];
+    let last_error = null;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      for (const protocol of protocols) {
+        const baseUrl = `${protocol}://${domain}`;
+        try {
+          await log({ type: LOG_TYPE.INFO, msg: `Attempt ${attempt}/${MAX_ATTEMPTS}: Navigating to ${baseUrl}` });
+          await page.goto(baseUrl, { waitUntil: 'networkidle0', timeout: TIMEOUT });
+          await log({ type: LOG_TYPE.INFO, msg: `Successfully navigated to ${baseUrl}` });
+          return;
+        } catch (error) {
+          last_error = error;
+          const errorMsg = error.message || '';
+          const isNetError = errorMsg.startsWith('net::');
+          const isTimeout = errorMsg.includes('TimeoutError');
+
+          await log({
+            type: LOG_TYPE.WARNING,
+            msg: `Error navigating to ${baseUrl} (Attempt ${attempt}/${MAX_ATTEMPTS}): ${errorMsg}`
+          });
+
+          // If not retryable, quit all
+          if (!isTimeout && !isNetError) {return};
+        }
+      }
+    }
+  };
+
+
+
+  evaluateDomain = async (domain, page) => {
+    // Evaluate domain
+    const result = await page.evaluate(() => {
+      const evaluator = new window.__privEvaluator();
+      return evaluator.getResults();
+    });
+    await log({ type: LOG_TYPE.RESULT, msg: `[DOMAIN]: ${domain}, [JS FRAMEWORK]: ${result.detected_framework}, [DEV TOOLS ENABLED]: ${result.dev_tool_enabled}` });
+    return result;
   }
 }
 

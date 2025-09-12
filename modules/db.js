@@ -25,7 +25,7 @@ class DB {
               required: true
             },
             detected_framework: {
-              type: String,
+              type: Array,
               required: true
             },
             dev_tool_enabled: {
