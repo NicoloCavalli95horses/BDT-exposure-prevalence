@@ -32,6 +32,7 @@ export class Crawler {
       batch_number: 0,
       content: [],
       results: [],
+      successes: 0,
     };
   }
 
@@ -121,12 +122,14 @@ export class Crawler {
 
     // Wait for all the promises to complete
     await Promise.all(active_tab);
-    await log({ type: LOG_TYPE.INFO, msg: `Batch ${this.batch.batch_number} processed successfully` });
+    await log({ type: LOG_TYPE.INFO, msg: `Batch ${this.batch.batch_number} processed successfully. Success: ${this.batch.successes/GLOBAL_CONFIG.BATCH_SIZE*100}%` });
 
     // Save batch results
     if (this.batch.results.length) {
       delete this.batch.content;
       ebus.emit(EVENT.SAVE_DB, this.batch);
+      ebus.emit(EVENT.BATCH_STATE, this.batch);
+      this.batch.successes = 0;
       this.batch.content = [];
       this.batch.results = [];
     }
@@ -182,8 +185,7 @@ export class Crawler {
     const MAX_ATTEMPTS = GLOBAL_CONFIG.MAX_NAVIGATION_ATTEMPTS;
     const TIMEOUT = GLOBAL_CONFIG.TIMEOUT;
     const protocols = ['https', 'http'];
-    let last_error = null;
-
+    
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       for (const protocol of protocols) {
         const baseUrl = `${protocol}://${domain}`;
@@ -191,9 +193,9 @@ export class Crawler {
           await log({ type: LOG_TYPE.INFO, msg: `Attempt ${attempt}/${MAX_ATTEMPTS}: Navigating to ${baseUrl}` });
           await page.goto(baseUrl, { waitUntil: 'networkidle0', timeout: TIMEOUT });
           await log({ type: LOG_TYPE.INFO, msg: `Successfully navigated to ${baseUrl}` });
+          this.batch.successes++;
           return;
         } catch (error) {
-          last_error = error;
           const errorMsg = error.message || '';
           const isNetError = errorMsg.startsWith('net::');
           const isTimeout = errorMsg.includes('TimeoutError');
@@ -202,7 +204,7 @@ export class Crawler {
             type: LOG_TYPE.WARNING,
             msg: `Error navigating to ${baseUrl} (Attempt ${attempt}/${MAX_ATTEMPTS}): ${errorMsg}`
           });
-
+          
           // If not retryable, quit all
           if (!isTimeout && !isNetError) {return};
         }

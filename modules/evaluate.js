@@ -64,13 +64,15 @@ class Evaluator {
     // Surprisingly, in certain cases multiple JS frameworks are used at the same time (mostly to let third-parties handle cookie banners or ads, see https://stackoverflow.com/questions/65694921/can-i-use-multiple-frameworks-on-a-single-website-page)
     // (e.g: https://mail.ru/, with React and Svelte)
 
-    return [
+    const ret = [
       this.isReact() ? REACT : '',
       this.isVue() ? VUE : '',
       this.isAngular() ? ANGULAR : '',
       this.isSvelte() ? SVELTE : '',
       this.isEmber() ? EMBER : '',
-    ].join('')
+    ].join('');
+
+    return ret.length ? ret : ['unknown'];
   }
 
 

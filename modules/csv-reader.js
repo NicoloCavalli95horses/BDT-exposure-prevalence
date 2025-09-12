@@ -28,10 +28,17 @@ class CSVReader {
     this.batch_number = 0;
     this.results = [];
     this.stream = fs.createReadStream(this.csv_path).pipe(csv({ headers: ['id', 'domain'] }));
+    this.total_successes = 0;
+    this.reading_stopped = false;
   }
 
-  onStart = () => {
-    this.stream.on('data', (data) => {
+  onStart = async () => {
+    this.stream.on('data', async (data) => {
+      if (this.reading_stopped) {
+        await log({ type: LOG_TYPE.INFO, msg: `Reading stopped. Target achieved with ${GLOBAL_CONFIG.MIN_SUCCESSES} successes` });
+        return;
+      };
+
       this.results.push(data);
 
       if (this.results.length === GLOBAL_CONFIG.BATCH_SIZE) {
@@ -42,9 +49,6 @@ class CSVReader {
       }
     });
 
-    ebus.on(EVENT.BATCH_NEXT, () => {
-      this.stream.resume();
-    });
 
     this.stream.on('end', () => {
       if (this.results.length > 0) {
@@ -53,6 +57,23 @@ class CSVReader {
         this.results = [];
       }
       ebus.emit(EVENT.READ_DONE);
+    });
+
+
+    ebus.on(EVENT.BATCH_NEXT, () => {
+      if (!this.reading_stopped) {
+        this.stream.resume();
+      }
+    });
+
+    ebus.on(EVENT.BATCH_STATE, ( {successes} ) => {
+      this.total_successes += successes;
+
+      if (this.total_successes >= GLOBAL_CONFIG.MIN_SUCCESSES) {
+        this.reading_stopped = true;
+        this.stream.destroy(); // Stop stream
+        ebus.emit(EVENT.READ_DONE);
+      }
     });
   }
 }

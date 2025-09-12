@@ -13,6 +13,7 @@ export const EVENT = Object.freeze({
   START: 'start',             // [job start] launch puppeteer
   BATCH_READY: 'batch-ready', // [batch ready] process current batch, stop reading CSV
   BATCH_NEXT: 'batch-next',   // [next batch request] current batch processed, resume reading CSV
+  BATCH_STATE: 'batch-state', // [batch state] report the amount of errors to csv-reader to recalculate the remaining domains
   CONNECT_DB: 'connect-db',   // [connect to db]
   SAVE_DB: 'save-db',         // [save to db]
   BATCH_SAVED: 'batch-saved', // [current batch successfully saved]
